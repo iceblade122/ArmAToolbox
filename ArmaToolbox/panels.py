@@ -236,40 +236,32 @@ class ATBX_PT_material_settings_panel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return (context.active_object
-            and context.active_object.select_get() == True
-            and context.active_object.type == 'MESH'
-            and context.active_object.active_material
-            and context.active_object.armaObjProps
-            and context.active_object.armaObjProps.isArmaObject
-            )
+        return True
 
     def draw(self, context):
-        obj = bpy.context.active_object
         layout = self.layout
-        self.enable = obj.active_material
-        
-        if self.enable:
-            arma = obj.active_material.armaMatProps
-            box = layout.box()
-            # - box
-            row = box.row()
-            row.prop(arma, "texType", text = "Procedural Texture", expand=True)
-            row = box.row()
-            matType = arma.texType
-            if matType == 'Texture':
-                row.prop(arma, "texture", text = "Face Texture")
-            elif matType == 'Color':
-                row.prop(arma, "colorValue", text = "Color Texture")
-                row.prop(arma, "colorType", text = "Type")
-            elif matType == 'Custom':
-                row.prop(arma, "colorString", text = "Custom Procedural Texture")
-            row = box.row()
-                    
-            # end of box
-            layout.separator()
-            row = layout.row()
-            row.prop(arma, "rvMat", text = "RV Material file")
+
+        arma = context.material.armaMatProps
+        box = layout.box()
+
+        # - box
+        row = box.row()
+        row.prop(arma, "texType", text = "Procedural Texture", expand=True)
+        row = box.row()
+        matType = arma.texType
+        if matType == 'Texture':
+            row.prop(arma, "texture", text = "Face Texture")
+        elif matType == 'Color':
+            row.prop(arma, "colorValue", text = "Color Texture")
+            row.prop(arma, "colorType", text = "Type")
+        elif matType == 'Custom':
+            row.prop(arma, "colorString", text = "Custom Procedural Texture")
+        row = box.row()
+                
+        # end of box
+        layout.separator()
+        row = layout.row()
+        row.prop(arma, "rvMat", text = "RV Material file")
 
 class ATBX_PT_tool_panel(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
@@ -571,7 +563,7 @@ class ATBX_PT_hf_properties_panel(bpy.types.Panel):
             row = layout.row()
             row.label(text = "rows/cols: " + str(int(verts)))
 
-### TODO
+### Not really needed
 class ATBX_PT_selection_maker(bpy.types.Panel):
     bl_label = "Arma Toolbox: Hidden Selection Maker"
     bl_space_type = "PROPERTIES"
@@ -581,14 +573,10 @@ class ATBX_PT_selection_maker(bpy.types.Panel):
 
     @classmethod
     def poll(self, context):
-        obj = context.active_object
-        arma = obj.armaObjProps
-        
-        return context.active_object.active_material!=None and arma.isArmaObject == True
+        return False
 
     def draw(self, context):
         guiProps = context.window_manager.armaGUIProps
-        obj = bpy.context.active_object
         layout = self.layout
         layout.prop(guiProps, "hiddenSelectionName", text="Hidden Selection")            
 
