@@ -87,30 +87,12 @@ def writeString(filePtr, value):
 def writeBytes(filePtr, value):
     filePtr.write(value)
 
-###
-## Export a single object as a LOD into the P3D file        
-#
-def OLDwriteNormals(filePtr, mesh, numberOfNormals):
-    for v in range(0,numberOfNormals):
-        writeFloat(filePtr, 0)
-        writeFloat(filePtr, 1)
-        writeFloat(filePtr, 0)
-    
-    #return v
-
 # FaceNormals must be inverted (-X, -Y, -Z) for clockwise vertex order (default for DirectX), and not changed for counterclockwise order.
-def writeNormals(filePtr, mesh, numberOfNormals):
-    print("faces = ", len(mesh.polygons))
-    mesh.calc_normals_split()
-    for poly in mesh.polygons:
-        #print("index = ", poly.index)
-        loops = poly.loop_indices
-        for l in loops:
-            normal = mesh.loops[l].normal
-            writeFloat(filePtr, -normal[0])
-            writeFloat(filePtr, -normal[1])
-            writeFloat(filePtr, -normal[2])
-            #print("normal = " , normal)
+def writeNormals(filePtr, mesh):
+    for v in mesh.vertices:
+        writeFloat(filePtr, -v.normal.x)
+        writeFloat(filePtr, -v.normal.z)
+        writeFloat(filePtr, -v.normal.y)
 
 def writeVertices(filePtr, mesh):
     for v in mesh.vertices:
@@ -118,8 +100,6 @@ def writeVertices(filePtr, mesh):
         writeFloat(filePtr, v.co.z)
         writeFloat(filePtr, v.co.y)
         writeULong(filePtr, 0)
-
-
 
 def writeFaces(filePtr, obj, mesh):
     for idx,face in enumerate(mesh.polygons):
@@ -157,7 +137,6 @@ def writeFaces(filePtr, obj, mesh):
         writeString(filePtr, textureName)
         writeString(filePtr, materialName)
 
-
 def proxyPathStrip(pathName):
     if len(pathName) > 3:
         if pathName[0].upper() == 'P' and pathName[1] == ':':
@@ -169,57 +148,11 @@ def proxyPathStrip(pathName):
 def proxyIndex(index):
     return "%03d" % (index)
 
-#
-# This function is one of the reasons that export is slow (that and sharp edges).
-#
-# Possible idea to optimize: Instead of writing named selections one by one, go through the
-# vertices one by one, enter each named selection into a dictionary and append the vertex index
-# to the list of vertices. Then, cycle over the list and dump them.
-#
-# Potential issue: Memory consumption might be too high.
-""" def writeNamedSelection(filePtr, obj, mesh, idx):
-    name = obj.vertex_groups[idx].name
-    writeByte(filePtr, 1) # Always active
-    # Check the name for a proxy name
-    if name in obj.armaObjProps.proxyArray:
-        proxy = obj.armaObjProps.proxyArray[name]
-        name = "proxy:" + proxyPathStrip(proxy.path) + "." + proxyIndex(proxy.index) 
-    writeString(filePtr, name)
-    writeULong(filePtr, len(mesh.vertices) + len(mesh.polygons))
-    for vert in mesh.vertices:
-        grps = [grp for grp in vert.groups if grp.group == idx]
-        if len(grps) > 0: # Should only ever be 0 or 1
-            weight = convertWeight(grps[0].weight)
-            if weight < 0 or weight > 255:
-                print("Illegal weight " , grps[0].weight, "in group " + name)
-            writeByte(filePtr, weight)
-        else:
-            writeByte(filePtr, 0)
-    
-    for face in mesh.polygons:
-        grps = [grp for vert in face.vertices for grp in mesh.vertices[vert].groups if grp.group == idx]
-        if len(grps) == len(face.vertices):
-            weight = 0
-            for grpF in grps:
-                weight += grpF.weight
-            if (weight > 0):
-                writeByte(filePtr, convertWeight(1))
-            else:
-                writeByte(filePtr, 0)
-        else:
-            writeByte(filePtr, 0) 
-
-def OLDwriteNamedSelections(filePtr, obj, mesh):
-    for idx in range(len(obj.vertex_groups)):
-        writeNamedSelection(filePtr, obj, mesh, idx)
-"""
-
 def fullNameIfProxy(obj,name):
     if name in obj.armaObjProps.proxyArray:
         proxy = obj.armaObjProps.proxyArray[name]
         name = "proxy:" + proxyPathStrip(proxy.path) + "." + proxyIndex(proxy.index) 
     return name
-
 
 def writeNamedSelections(filePtr, obj, mesh):
     # Build the array
@@ -419,14 +352,10 @@ def export_lod(filePtr, obj, wm, idx):
     #if lod == 1.000e+13 or lod == 4.000e+13:
     #    checkMass(obj, lod, mesh)
 
-    numberOfNormals = 0
-    for f in mesh.polygons:
-        numberOfNormals = numberOfNormals + len(f.vertices)    
-    
     print("Writing Vertices")    
     # Write number of vertices, normals, and faces
     writeULong(filePtr, len(mesh.vertices))         # Number of Vertices
-    writeULong(filePtr, numberOfNormals)            # Number of Normals
+    writeULong(filePtr, len(mesh.vertices))            # Number of Normals
     writeULong(filePtr, len(mesh.polygons))   # Number of Faces
     writeULong(filePtr, 0)                          # Unused Flags
     
@@ -438,7 +367,7 @@ def export_lod(filePtr, obj, wm, idx):
     # Write normals
     # We can basically write whatever we like here since they are recalculated
     #normalOffsetInFile = filePtr.tell();
-    writeNormals(filePtr, mesh, numberOfNormals)
+    writeNormals(filePtr, mesh)
     wm.progress_update(idx*5+2)
             
     print("Writing faces")
