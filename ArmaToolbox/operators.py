@@ -1,4 +1,5 @@
 import bpy
+import bpy_extras
 from lists import safeAddTime
 from . import properties
 from ArmaProxy import CopyProxy, CreateProxyPos, SelectProxy
@@ -8,7 +9,160 @@ import RVMatTools
 from math import *
 from mathutils import *
 from ArmaToolbox import getLodsToFix
+from properties import ArmaToolboxMaterialProperties
 #from RtmTools import exportModelCfg
+
+import os, tempfile
+import errno, sys
+
+# Sadly, Python fails to provide the following magic number for us.
+ERROR_INVALID_NAME = 123
+
+'''
+Windows-specific error code indicating an invalid pathname.
+
+See Also
+----------
+https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-
+    Official listing of all such codes.
+'''
+
+def is_pathname_valid(pathname: str) -> bool:
+    '''
+    `True` if the passed pathname is a valid pathname for the current OS;
+    `False` otherwise.
+    '''
+    # If this pathname is either not a string or is but is empty, this pathname
+    # is invalid.
+    try:
+        if not isinstance(pathname, str) or not pathname:
+            return False
+
+        # Strip this pathname's Windows-specific drive specifier (e.g., `C:\`)
+        # if any. Since Windows prohibits path components from containing `:`
+        # characters, failing to strip this `:`-suffixed prefix would
+        # erroneously invalidate all valid absolute Windows pathnames.
+        _, pathname = os.path.splitdrive(pathname)
+
+        # Directory guaranteed to exist. If the current OS is Windows, this is
+        # the drive to which Windows was installed (e.g., the "%HOMEDRIVE%"
+        # environment variable); else, the typical root directory.
+        root_dirname = os.environ.get('HOMEDRIVE', 'C:') \
+            if sys.platform == 'win32' else os.path.sep
+        assert os.path.isdir(root_dirname)   # ...Murphy and her ironclad Law
+
+        # Append a path separator to this directory if needed.
+        root_dirname = root_dirname.rstrip(os.path.sep) + os.path.sep
+
+        # Test whether each path component split from this pathname is valid or
+        # not, ignoring non-existent and non-readable path components.
+        for pathname_part in pathname.split(os.path.sep):
+            try:
+                os.lstat(root_dirname + pathname_part)
+            # If an OS-specific exception is raised, its error code
+            # indicates whether this pathname is valid or not. Unless this
+            # is the case, this exception implies an ignorable kernel or
+            # filesystem complaint (e.g., path not found or inaccessible).
+            #
+            # Only the following exceptions indicate invalid pathnames:
+            #
+            # * Instances of the Windows-specific "WindowsError" class
+            #   defining the "winerror" attribute whose value is
+            #   "ERROR_INVALID_NAME". Under Windows, "winerror" is more
+            #   fine-grained and hence useful than the generic "errno"
+            #   attribute. When a too-long pathname is passed, for example,
+            #   "errno" is "ENOENT" (i.e., no such file or directory) rather
+            #   than "ENAMETOOLONG" (i.e., file name too long).
+            # * Instances of the cross-platform "OSError" class defining the
+            #   generic "errno" attribute whose value is either:
+            #   * Under most POSIX-compatible OSes, "ENAMETOOLONG".
+            #   * Under some edge-case OSes (e.g., SunOS, *BSD), "ERANGE".
+            except OSError as exc:
+                if hasattr(exc, 'winerror'):
+                    if exc.winerror == ERROR_INVALID_NAME:
+                        return False
+                elif exc.errno in {errno.ENAMETOOLONG, errno.ERANGE}:
+                    return False
+    # If a "TypeError" exception was raised, it almost certainly has the
+    # error message "embedded NUL character" indicating an invalid pathname.
+    except TypeError as exc:
+        return False
+    # If no exception was raised, all path components and hence this
+    # pathname itself are valid. (Praise be to the curmudgeonly python.)
+    else:
+        return True
+    # If any other exception was raised, this is an unrelated fatal issue
+    # (e.g., a bug). Permit this exception to unwind the call stack.
+    #
+    # Did we mention this should be shipped with Python already?
+
+def is_path_creatable(pathname: str) -> bool:
+    '''
+    `True` if the current user has sufficient permissions to create the passed
+    pathname; `False` otherwise.
+    '''
+    # Parent directory of the passed path. If empty, we substitute the current
+    # working directory (CWD) instead.
+    dirname = os.path.dirname(pathname) or os.getcwd()
+    return os.access(dirname, os.W_OK)
+
+def is_path_exists_or_creatable(pathname: str) -> bool:
+    '''
+    `True` if the passed pathname is a valid pathname for the current OS _and_
+    either currently exists or is hypothetically creatable; `False` otherwise.
+
+    This function is guaranteed to _never_ raise exceptions.
+    '''
+    try:
+        # To prevent "os" module calls from raising undesirable exceptions on
+        # invalid pathnames, is_pathname_valid() is explicitly called first.
+        return is_pathname_valid(pathname) and (
+            os.path.exists(pathname) or is_path_creatable(pathname))
+    # Report failure on non-fatal filesystem complaints (e.g., connection
+    # timeouts, permissions issues) implying this path to be inaccessible. All
+    # other exceptions are unrelated fatal issues and should not be caught here.
+    except OSError:
+        return False
+
+def is_path_sibling_creatable(pathname: str) -> bool:
+    '''
+    `True` if the current user has sufficient permissions to create **siblings**
+    (i.e., arbitrary files in the parent directory) of the passed pathname;
+    `False` otherwise.
+    '''
+    # Parent directory of the passed path. If empty, we substitute the current
+    # working directory (CWD) instead.
+    dirname = os.path.dirname(pathname) or os.getcwd()
+
+    try:
+        # For safety, explicitly close and hence delete this temporary file
+        # immediately after creating it in the passed path's parent directory.
+        with tempfile.TemporaryFile(dir=dirname): pass
+        return True
+    # While the exact type of exception raised by the above function depends on
+    # the current version of the Python interpreter, all such types subclass the
+    # following exception superclass.
+    except EnvironmentError:
+        return False
+
+def is_path_exists_or_creatable_portable(pathname: str) -> bool:
+    '''
+    `True` if the passed pathname is a valid pathname on the current OS _and_
+    either currently exists or is hypothetically creatable in a cross-platform
+    manner optimized for POSIX-unfriendly filesystems; `False` otherwise.
+
+    This function is guaranteed to _never_ raise exceptions.
+    '''
+    try:
+        # To prevent "os" module calls from raising undesirable exceptions on
+        # invalid pathnames, is_pathname_valid() is explicitly called first.
+        return is_pathname_valid(pathname) and (
+            os.path.exists(pathname) or is_path_sibling_creatable(pathname))
+    # Report failure on non-fatal filesystem complaints (e.g., connection
+    # timeouts, permissions issues) implying this path to be inaccessible. All
+    # other exceptions are unrelated fatal issues and should not be caught here.
+    except OSError:
+        return False
 
 class ATBX_OT_add_frame_range(bpy.types.Operator):
     bl_idname = "armatoolbox.add_frame_range"
@@ -836,6 +990,89 @@ class ATBX_OT_select_transparent(bpy.types.Operator):
         ArmaTools.selectTransparency(self, context)
         return {'FINISHED'}
 
+class ATBX_OT_process_materials(bpy.types.Operator):
+    bl_idname = "armatoolbox.process_materials"
+    bl_label = "Process Materials"
+    
+    def execute(self, context):
+        from bpy.types import Object, Collection, Material, NodeTree, ShaderNodeTexImage, ShaderNodeBsdfPrincipled, Image
+
+        from subprocess import call
+
+        import random
+        import string
+
+        import winreg
+
+        #Computer\HKEY_CURRENT_USER\Software\Bohemia Interactive\Dayz Tools\ImageToPAA
+        regKey = r"Software\Bohemia Interactive\Dayz Tools\ImageToPAA"
+        reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER, regKey) #winreg.ConnectRegistry(None, winreg.HKEY_CURRENT_USER)
+
+        images = {}
+        imageToPaa = winreg.QueryValueEx(reg, 'tool')[0]
+        tempFolder = '%temp%\\armatoolbox\\'
+        tempFolder = os.path.expandvars(tempFolder)
+
+        for _col in bpy.data.collections:
+            col : Collection = _col
+            objects = [obj
+                for obj in col.all_objects
+                    if obj.type == 'MESH'
+                      and obj.armaObjProps.isArmaObject
+              ]
+            for _obj in objects:
+                obj : Object = _obj
+                for _material in obj.material_slots:
+                    try:
+                        material : Material = _material.material
+                        material.use_nodes = True
+
+                        props : ArmaToolboxMaterialProperties = material.armaMatProps
+
+                        node_tree : NodeTree = material.node_tree
+
+                        texture_path = "P:\\" + props.texture
+                        texture_path = texture_path.lower()
+
+                        if is_path_exists_or_creatable_portable(texture_path) == False:
+                            continue
+
+                        try:
+                            tempName = images[texture_path]
+                        except KeyError:
+                            file_name = os.path.basename(texture_path)
+                            file_name = os.path.splitext(file_name)[0]
+
+                            tempName = tempFolder + col.name + "_" + file_name + ".png"
+
+                            command = '"' + imageToPaa + '" "' + texture_path + '" "' + tempName + '"'
+                            call(command, shell=True)
+
+                            images[texture_path] = tempName
+
+                        image = bpy.data.images.load(tempName)
+                        image.source = 'FILE'
+                        image.name = tempName
+
+                        tex_node : ShaderNodeTexImage = node_tree.nodes.get('Texture')
+                        if tex_node is None:
+                            tex_node = node_tree.nodes.new(type="ShaderNodeTexImage")
+
+                        tex_node.image = image
+                        tex_node.name = 'Texture'
+
+                        principled_node : ShaderNodeBsdfPrincipled = node_tree.nodes.get('Principled BSDF')
+
+                        links = node_tree.links
+                        
+                        link = links.new
+                        link(tex_node.outputs[0], principled_node.inputs[0])
+                    except Exception as e:
+                        self.report({'WARNING', 'INFO'}, "I/O error: {0}".format(e))
+
+                    
+        return {'FINISHED'}
+
 op_classes = (
     ATBX_OT_add_frame_range,
     ATBX_OT_add_key_frame,
@@ -875,7 +1112,8 @@ op_classes = (
     ATBX_OT_selectBadUV,
     ATBX_OT_set_transparency,
     ATBX_OT_unset_transparency,
-    ATBX_OT_select_transparent
+    ATBX_OT_select_transparent,
+    ATBX_OT_process_materials
 )
 
 

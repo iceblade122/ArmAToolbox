@@ -298,9 +298,13 @@ class ATBX_PT_tool_panel(bpy.types.Panel):
  
     def draw(self, context):
         layout = self.layout
+        
+        row = layout.row()
+        row.operator("armatoolbox.process_materials", text = "Process Materials")
+        
         guiProps = context.window_manager.armaGUIProps
         col = layout.column(align=True)
-        
+
         # Bulk Renamer
         split = col.split(factor=0.15)
         if guiProps.bulkRenamePanelOpen:
@@ -308,7 +312,7 @@ class ATBX_PT_tool_panel(bpy.types.Panel):
         else:
             split.prop(guiProps, "bulkRenamePanelOpen", text="", icon='RIGHTARROW')
         split.operator("armatoolbox.bulk_rename", text = "Path Rename")
-        
+
         # Bulk Renamer Settings
         if guiProps.bulkRenamePanelOpen:
             box = col.column(align=True).box().column()
