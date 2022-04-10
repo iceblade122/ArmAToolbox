@@ -213,18 +213,13 @@ class ATBX_OT_rtm_export(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
         
 class ATBX_OT_p3d_export(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
     bl_idname="armatoolbox.export_p3d"
-    bl_label = "Export as P3D"
-    bl_description = "Export as P3D"
+    bl_label = "Export P3D(s)"
+    bl_description = "Export P3D(s)"
     
     filter_glob : bpy.props.StringProperty(
-        default="*.p3d",
+        default="*",
         options={'HIDDEN'})
     
-    selectionOnly : bpy.props.BoolProperty(
-       name = "Selection Only", 
-       description = "Export selected objects only", 
-       default = False)
-
     applyModifiers : bpy.props.BoolProperty(
         name="Apply Modifies",
         description="Apply modifiers before export (experimental)",
@@ -235,41 +230,42 @@ class ATBX_OT_p3d_export(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
         description="Merge objects with the same LOD in exported file (experimental)",
         default= True)
 
-    filename_ext = ".p3d"
+    filename_ext = ""
     
     def execute(self, context):
-        if context.view_layer.objects.active == None:
-            context.view_layer.objects.active = bpy.data.objects[0]
+        self.filepath = os.path.split(self.filepath)[0]
 
-        #try:
-        # Open the file and export 
-        filePtr = open(self.filepath, "wb")
-        exportMDL(self, filePtr, self.selectionOnly,
-                  self.applyModifiers, self.mergeSameLOD)
-        filePtr.close()
-        
-        # Write a temporary O2script file for this
-        filePtr = tempfile.NamedTemporaryFile("w", delete=False)
-        tmpName = filePtr.name
-        filePtr.write("p3d = newLodObject;\n")
-        filePtr.write('_res = p3d loadP3D "%s";\n' % (self.filepath))
-        filePtr.write("_res = p3d setActive 4e13;")
-        filePtr.write('save p3d;\n')
-        filePtr.close()
-        
-        # Run O2Script to output the P3D
-        #command = os.path.join(context.window_manager.armatoolbox.o2path, "O2Script.exe")
-        user_preferences = context.preferences
-        addon_prefs = user_preferences.addons[__name__].preferences
-        command = addon_prefs.o2ScriptProp
-        command = '"' + command +'" "' + tmpName + '"'
-        #print("command (before abspath) = " + command)
-        #command = os.path.abspath(command)
-        print("command = " + command)
-        call (command, shell=True)
-        os.remove(tmpName)
-        #except Exception as e:
-        #    self.report({'WARNING', 'INFO'}, "I/O error: {0}".format(e))
+        for col in bpy.data.collections:
+            fileName = self.filepath + os.path.sep + col.name + ".p3d"
+            objects = col.all_objects
+
+            #try:
+            # Open the file and export 
+            if exportMDL(self, fileName, objects, self.applyModifiers, self.mergeSameLOD) == False:
+                continue
+            
+            # Write a temporary O2script file for this
+            filePtr = tempfile.NamedTemporaryFile("w", delete=False)
+            tmpName = filePtr.name
+            filePtr.write("p3d = newLodObject;\n")
+            filePtr.write('_res = p3d loadP3D "%s";\n' % (fileName))
+            filePtr.write("_res = p3d setActive 4e13;")
+            filePtr.write('save p3d;\n')
+            filePtr.close()
+            
+            # Run O2Script to output the P3D
+            #command = os.path.join(context.window_manager.armatoolbox.o2path, "O2Script.exe")
+            user_preferences = context.preferences
+            addon_prefs = user_preferences.addons[__name__].preferences
+            command = addon_prefs.o2ScriptProp
+            command = '"' + command +'" "' + tmpName + '"'
+            #print("command (before abspath) = " + command)
+            #command = os.path.abspath(command)
+            print("command = " + command)
+            call (command, shell=True)
+            os.remove(tmpName)
+            #except Exception as e:
+            #    self.report({'WARNING', 'INFO'}, "I/O error: {0}".format(e))
             
         return{'FINISHED'}
         

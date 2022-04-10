@@ -562,35 +562,25 @@ def applyModifiersOnObject(tmpObj):
         bpy.ops.object.modifier_apply(modifier=mod.name)
 
 # Export a couple of meshes to a P3D MLOD files    
-def exportMDL(myself, filePtr, selectedOnly, applyModifiers, mergeSameLOD):
-    if selectedOnly:
-        objects = [obj
-                    for obj in bpy.context.selected_objects
-                        if obj.type == 'MESH' and obj.armaObjProps.isArmaObject
-                  ] 
-    else:
-        objects = [obj
-                   for obj in bpy.data.objects
-       
-                       if (selectedOnly == False or obj.selected == True)
-                          and obj.type == 'MESH'
-                          and obj.armaObjProps.isArmaObject
-                  ]
-
+def exportMDL(myself, fileName, objects, applyModifiers, mergeSameLOD):
+    objects = [obj
+                for obj in objects
+                    if obj.type == 'MESH'
+                      and obj.armaObjProps.isArmaObject
+              ]
+    
     if len(objects) == 0:
         return False
     
+    filePtr = open(fileName, "wb")
     exportObjectListAsMDL(myself, filePtr, applyModifiers, mergeSameLOD, objects)
+
+    filePtr.close()
 
     return True
 
 def exportObjectListAsMDL(myself, filePtr, applyModifiers, mergeSameLOD, objects):
-
     objects = sorted(objects, key=lodKey)
-
-    # Make sure the object is in OBJECT mode, otherwise some of the functions might fail
-    if (bpy.context.object.mode!='OBJECT'):
-        bpy.ops.object.mode_set(mode='OBJECT')
     
     # Write file header
     writeSignature(filePtr, 'MLOD')
@@ -617,6 +607,13 @@ def exportObjectListAsMDL(myself, filePtr, applyModifiers, mergeSameLOD, objects
         idx = 0
         while  idx < len(objects):
             obj = objects[idx]
+
+            bpy.context.view_layer.objects.active = obj
+
+            # Make sure the object is in OBJECT mode, otherwise some of the functions might fail
+            if (bpy.context.object.mode != 'OBJECT'):
+                bpy.ops.object.mode_set(mode='OBJECT')
+
             realIndex = idx
             print ("Considering object ", objects[idx].name)
             if sameLod(objects, idx):
