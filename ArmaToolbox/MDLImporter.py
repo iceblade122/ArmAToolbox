@@ -185,7 +185,7 @@ def decodeWeight(b):
         # print ("decodeWeight(",b,") returns 1.0 as else case")
         return 1.0 #TODO: Correct?
 
-def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
+def loadLOD(coll, filePtr, objectName, materialData, layerFlag, lodnr):
     global objectLayers
     meshName = objectName
     weightArray = []
@@ -217,7 +217,7 @@ def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
         pnt = [point[0],  point[2], point[1]]
         verts.append(pnt)
     
-    print("normals (",numNormals, ")...")    
+    print("normals (", numNormals, ")...")
     normals = []
     for i in range(0, numNormals):
         normal = struct.unpack("fff", filePtr.read(12))
@@ -283,18 +283,7 @@ def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
 
     obj = bpy.data.objects.new(meshName, mymesh)
     
-    # TODO: Maybe add a "logical Collection" option that
-    # Collects all geometries, shadows, custom etc in a collection.
-
-    scn = bpy.context.scene
-
-    coll = bpy.data.collections.new(meshName)
-    context.scene.collection.children.link(coll)
     coll.objects.link(obj)
-    
-    #NEIN! coll.hide_viewport = True
-    #scn.objects.link(obj)
-    #scn.objects.active = obj   
     
     # Build Edge database to make finding sharp edges easier
     edgeDict = dict()
@@ -308,7 +297,8 @@ def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
         #print(f"adding edge index {edge.index} as ({v1},{v2}) to edge dictionary")
         edgeDict[(v1,v2)] = edge.index
 
-    print("taggs")    
+    print("taggs")
+    
     loop = True
     sharpEdges = None
     weight = None
@@ -414,11 +404,9 @@ def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
     
     # Done with the taggs, only the resolution is left to read
     resolution = readFloat(filePtr)  
-    #meshName = meshName + "." + resolutionName(resolution)      
-    meshName = resolutionName(resolution)
+    meshName = meshName + "_" + resolutionName(resolution)      
     mymesh.name = meshName
     obj.name = meshName
-    coll.name = meshName
 
     print("materials...")
     indexData = {}
@@ -511,7 +499,7 @@ def loadLOD(context, filePtr, objectName, materialData, layerFlag, lodnr):
     else:
         obj.armaObjProps.lodDistance = offset #0.0
 
-    print("set LOD type")    
+    print("set LOD type")
     # Set the right LOD type
     lodPresets = ArmaToolbox.lodPresets
     
@@ -579,9 +567,12 @@ def importMDL(context, fileName, layerFlag):
     if version != 257 or sig != b'MLOD':
         return -1
     
+    coll = bpy.data.collections.new(objName)
+    context.scene.collection.children.link(coll)
+
     # Start loading lods
-    for i in range(0,numLods):
-        if loadLOD(context, filePtr, objName, materialData, layerFlag, i) != 0:
+    for i in range(0, numLods):
+        if loadLOD(coll, filePtr, objName, materialData, layerFlag, i) != 0:
             return -2
 
     filePtr.close()
